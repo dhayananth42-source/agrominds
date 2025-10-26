@@ -1,0 +1,120 @@
+import os
+from flask import Flask, request, jsonify
+import openai
+
+app = Flask(__name__)
+
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+
+# --- Sample Data ---
+
+GOV_SCHEMES = [
+    {"name": "PM Kisan", "details": "Direct cash support to farmers."},
+    {"name": "PMFBY", "details": "Crop insurance for various crops."},
+    {"name": "Soil Health Card", "details": "Free soil testing for better crop planning."}
+]
+
+CROP_ADVICE = {
+    "summer": "Recommended crops: Maize, Millet, Pulses. Consider drip irrigation to save water.",
+    "winter": "Recommended crops: Wheat, Mustard, Peas. Protect crops from frost.",
+    "monsoon": "Recommended crops: Rice, Cotton, Sugarcane. Watch for water-logging."
+}
+
+MARKET_PRICES = {
+    "wheat": {"price": 2100, "unit": "quintal"},
+    "rice": {"price": 1900, "unit": "quintal"},
+    "cotton": {"price": 5800, "unit": "quintal"}
+}
+
+WEATHER_ADVICE = {
+    "rain": "Heavy rain expected. Ensure proper drainage in your fields.",
+    "drought": "Drought warning. Use mulching and water conservation techniques.",
+    "normal": "Weather is normal. Good time for sowing and fertilizer application."
+}
+
+# --- Helper Functions ---
+
+def get_government_schemes():
+    resp = "Here are some government schemes for farmers:\n"
+    for scheme in GOV_SCHEMES:
+        resp += f"- {scheme['name']}: {scheme['details']}\n"
+    return resp
+
+def get_crop_advice(season):
+    return CROP_ADVICE.get(season.lower(), "Please specify a valid season: summer, winter, or monsoon.")
+
+def get_market_price(crop):
+    crop = crop.lower()
+    if crop in MARKET_PRICES:
+        info = MARKET_PRICES[crop]
+        return f"Current market price of {crop.title()}: ₹{info['price']} per {info['unit']}."
+    return "Sorry, market price for this crop is not available."
+
+def get_weather_advice(condition):
+    return WEATHER_ADVICE.get(condition.lower(), "Please provide a valid weather condition (rain, drought, normal).")
+
+def mock_disease_detection(image_bytes):
+    # Placeholder: Implement ML model here
+    # For now, always return the same result
+    return {
+        "disease": "Leaf Blight",
+        "recommendation": "Spray recommended fungicide and remove affected leaves."
+    }
+
+def gpt_response(user_message):
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are an expert Indian farming advisor. Help farmers with crop selection, disease management, market prices, and government schemes. Reply simply and clearly."},
+            {"role": "user", "content": user_message}
+        ]
+    )
+    return completion.choices[0].message["content"]
+
+# --- Routes ---
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    data = request.json
+    user_message = data.get("message", "")
+
+    # Feature: Government Schemes
+    if "scheme" in user_message.lower():
+        return jsonify({"reply": get_government_schemes()})
+
+    # Feature: Seasonal Crop Advice
+    for season in ["summer", "winter", "monsoon"]:
+        if season in user_message.lower():
+            return jsonify({"reply": get_crop_advice(season)})
+
+    # Feature: Market Prices
+    if "price" in user_message.lower():
+        for crop in MARKET_PRICES.keys():
+            if crop in user_message.lower():
+                return jsonify({"reply": get_market_price(crop)})
+
+    # Feature: Weather Advice
+    for condition in ["rain", "drought", "normal"]:
+        if condition in user_message.lower():
+            return jsonify({"reply": get_weather_advice(condition)})
+
+    # Fallback: GPT intelligent advice
+    gpt_reply = gpt_response(user_message)
+    return jsonify({"reply": gpt_reply})
+
+@app.route("/detect_disease", methods=["POST"])
+def detect_disease():
+    # Expect image file in request
+    if 'image' not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+    image = request.files['image']
+    image_bytes = image.read()
+    result = mock_disease_detection(image_bytes)
+    return jsonify(result)
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Agrominds AI Farming Advisor Chatbot is running!"
+
+if __name__ == "__main__":
+    app.run(debug=True)
